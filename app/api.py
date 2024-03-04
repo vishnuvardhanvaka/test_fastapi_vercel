@@ -19,7 +19,8 @@ origins = [
     "https://miraparentpal.com",
     "https://www.miraparentpal.com",
     'https://miraparentpal.vercel.app',
-    'https://inotes-gamma.vercel.app'
+    'https://inotes-gamma.vercel.app',
+    'https://ai-avatar-live-stream.vercel.app'
 ]
 
 app=FastAPI()
