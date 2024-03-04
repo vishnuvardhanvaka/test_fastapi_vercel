@@ -1,0 +1,11 @@
+from fastapi import FastAPI
+
+app=FastAPI()
+
+@app.get('/',tags=['Root'])
+async def hello():
+    return {'success':'you have successfully deployed fastapi to vercel'}
+
+
+
+
