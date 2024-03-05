@@ -131,7 +131,7 @@ class Database:
         # No filters provided, retrieve all news articles sorted by datetime in descending order
         news_articles = self.news_collection.find().sort("datetime", DESCENDING)
     else:
-      news_articles = self.news_collection.find(query)
+      news_articles = self.news_collection.find(query).sort("datetime", DESCENDING)
     news=[]
     for article in news_articles:
         # print(article)
