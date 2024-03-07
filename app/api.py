@@ -24,7 +24,6 @@ origins = [
 ]
 
 app=FastAPI()
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -33,65 +32,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-import subprocess
-import threading
 
-class StreamProcess:
-    def __init__(self, video_path, stream_key):
-        self.video_path = video_path
-        self.stream_key = stream_key
-        self.process = None
-        self.stop_event = threading.Event()
-
-    def start(self):
-        args = [
-          '-stream_loop', '-1',
-          '-re',
-          '-i', self.video_path,
-          '-c', 'copy',
-          '-b:v', '6800k',  # Set the video bitrate to 6800 Kbps
-          '-f', 'flv',
-          '-fflags', 'nobuffer',
-          '-flags', 'low_delay',
-          f'rtmp://a.rtmp.youtube.com/live2/{self.stream_key}'
-      ]
-
-        self.process = subprocess.Popen(['ffmpeg'] + args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    def check_stream(self):
-      if self.process and self.process.poll() is None:
-        # print("Streaming process running")
-        return True
-      # print("Streaming process stopped")
-      return False
-    def stop(self):
-        if self.process and self.process.poll() is None:
-            self.stop_event.set()  # Signal the thread to stop
-            self.process.terminate()  # Terminate the ffmpeg process
-
-def stream_video(video_path, stream_key):
-    stream_process = StreamProcess(video_path, stream_key)
-    stream_thread = threading.Thread(target=stream_process.start)
-    stream_thread.start()
-    return stream_process
-
-stream_process = None
-
-@app.get('/startStreaming')
-async def startStreaming():
-    global stream_process
-    # video_path='./finalVideo.mp4'
-    video_path = './finalVideo.mp4'
-    stream_key='68p2-txmk-79sm-hjfh-2d26'
-    stream_process = stream_video(video_path,stream_key)
-    return {"stream_status":stream_process.check_stream()}
-
-@app.get('/stopStreaming')
-async def stopStreaming():
-    global stream_process
-    if stream_process:
-        stream_process.stop()
-    return {"stream_status":stream_process.check_stream()}
-
+from pymongo import MongoClient
+from datetime import datetime,timedelta
+from pymongo import DESCENDING,UpdateOne
 
 class Database:
   def __init__(self):
@@ -102,22 +46,28 @@ class Database:
     self.database=client.infosphere
     self.user_collection=self.database.userdata
     self.news_collection=self.database.newsCollection
+    self.pr_news_collection=self.database.prNewsCollection
     print('Successfully connected to the database !')
   def save_news(self, document):
-    existing_document = self.news_collection.find_one({"headline": document["headline"]})
-    if existing_document:
-        return {'success': False, 'message': 'Headline already exists in the database'}
-    else:
-        id = self.news_collection.insert_one(document)
-        return {'success': True, 'message': 'News saved successfully'}
-
-  def save_sports_indian_express_news(self, document):
-    existing_document = self.news_collection.find_one({"headline": document["headline"]})
-    if existing_document:
-        return {'success': False, 'message': 'Headline already exists in the database'}
-    else:
-        id = self.news_collection.insert_one(document)
-        return {'success': True, 'message': 'News saved successfully'}
+      existing_document = self.news_collection.find_one({"headline": document["headline"]})
+      if existing_document:
+          # Update the existing document
+          self.news_collection.update_one({"headline": document["headline"]}, {"$set": document})
+          return {'success': True, 'message': 'News updated successfully'}
+      else:
+          # Insert the new document
+          self.news_collection.insert_one(document)
+          return {'success': True, 'message': 'News saved successfully'}
+  def save_pr_news(self, document):
+      existing_document = self.pr_news_collection.find_one({"headline": document["headline"]})
+      if existing_document:
+          # Update the existing document
+          self.pr_news_collection.update_one({"headline": document["headline"]}, {"$set": document})
+          return {'success': True, 'message': 'News updated successfully'}
+      else:
+          # Insert the new document
+          self.pr_news_collection.insert_one(document)
+          return {'success': True, 'message': 'News saved successfully'}
 
   def getNews(self, category=None, date=None, end_date=None):
     query = {}
@@ -130,8 +80,25 @@ class Database:
     if not (category or date or end_date):
         # No filters provided, retrieve all news articles sorted by datetime in descending order
         news_articles = self.news_collection.find().sort("datetime", DESCENDING)
-    else:
-      news_articles = self.news_collection.find(query).sort("datetime", DESCENDING)
+    news_articles = self.news_collection.find(query).sort("datetime", DESCENDING)
+    news=[]
+    for article in news_articles:
+        # print(article)
+        article.pop('_id', None)
+        news.append(article)
+    return news
+  def getPrNews(self, category=None, date=None, end_date=None):
+    query = {}
+    if category:
+        query["category"] = category
+    if date:
+        date_object = datetime.strptime(date, "%Y-%m-%d")
+        query["datetime"] = {"$gte": date_object, "$lt": date_object + timedelta(days=1)}
+
+    if not (category or date or end_date):
+        # No filters provided, retrieve all news articles sorted by datetime in descending order
+        news_articles = self.pr_news_collection.find().sort("datetime", DESCENDING)
+    news_articles = self.pr_news_collection.find(query).sort("datetime", DESCENDING)
     news=[]
     for article in news_articles:
         # print(article)
@@ -355,7 +322,6 @@ def prNewsWire(category=''):
 # pr_news_data=prNewsWire('food')
 # print(pr_news_data)
 # email:str=Form(...)
-
 @app.post('/getNews/')
 async def getNews(category: Optional[str] = Form(None), date: Optional[str] = Form(None)):
     print(category, date, type(category), type(date))
@@ -364,7 +330,13 @@ async def getNews(category: Optional[str] = Form(None), date: Optional[str] = Fo
     if date=='null':
        date=None
     news_articles = db.getNews(category=category, date=date)
+    print(len(news_articles))
     return {'news_articles': news_articles}
+@app.get('/getPrNews')
+async def getPrNews():
+    news_articles = db.getPrNews()
+    return {'news_articles': news_articles}
+
 
 @app.get('/',tags=['Root'])
 async def hello():
