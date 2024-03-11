@@ -107,7 +107,6 @@ class Database:
     return news
 db=Database()
 
-
 #Programmable Search Engine
 API_KEY='AIzaSyD_kA4vs7IGC9LGlQf1KzoPAaMdork5L6U'
 CSE_ID='e643ba6afdcd842cf'
@@ -122,7 +121,7 @@ def search_images(query, num=1):
     return res.get("items", [])
 
 def summarize(headline,content):
-  GOOGLE_API_KEY='AIzaSyAU_L_qPbG-7fzYuFOt5YGmTN8IONx2hwI'
+  GOOGLE_API_KEY='AIzaSyAblvWFXP2uhDSwV_k7jYLhLwEC6p8U2rE'
   genai.configure(api_key=GOOGLE_API_KEY)
   # for models in genai.list_models():
   #   if 'generateContent' in models.supported_generation_methods:
@@ -164,20 +163,29 @@ def summarize(headline,content):
   )
   # model = genai.GenerativeModel('gemini-pro')
   # model = genai.GenerativeModel('gemini-1.0-pro-latest')
-  prompt_summary=f'''Summarize this below news content to major points.
+  prompt_summary=f'''Summarize this below news content highlighting the major information with atleast 70 words.
     NEWS_CONTENT: "{content}"
-    <<<Note: Don't put any '*' or '-' in the points. Just put a '\n' between the points>>>
+    <<<Note: Don't put any '*' or '-' in the response.>>>
     '''
+  # print(prompt_summary)
   summary = model.generate_content(prompt_summary).text
 #   print(summary.text)
 
-  prompt_title=f'''Below is the news content, give a eye catching title.
+  prompt_title=f'''Below is the news content, give a short eye catching title in 5-8 words.
     HEADLINE:"{headline}"
     NEWS_CONTENT: "{content}"
     <<<Note: Don't put any '*' or '-' in the title.>>>
     '''
   title = model.generate_content(prompt_title).text
 #   print(title)
+
+  prompt_search=f'''Below is the news content, give me a searchable line to search for the best related image for the above content. just give me the related image searchable line.
+    NEWS_CONTENT: "{content}"
+    <<<Note: Don't put any '*' or '-'.>>>
+    '''
+  # search_line = model.generate_content(prompt_search).text
+  # print(search_line)
+
   return title,summary
 
 
@@ -195,10 +203,10 @@ def formate_date(date):
 
 
 def prNewsWire(category=''):
-  
+
   root_url= 'https://www.prnewswire.com'
   if category=='':
-    list_url= 'https://www.prnewswire.com/news-releases/news-releases-list/?page=1&pagesize=200'
+    list_url= 'https://www.prnewswire.com/news-releases/news-releases-list/?page=1&pagesize=20'
   elif category=='automotive':
     list_url='https://www.prnewswire.com/news-releases/automotive-transportation-latest-news/automotive-transportation-latest-news-list/?page=1&pagesize=200'
   elif category=='business':
@@ -230,7 +238,7 @@ def prNewsWire(category=''):
 
   main_class = soup.find_all(class_='row newsCards')
   anchor_tags = soup.find_all('a', class_='newsreleaseconsolidatelink display-outline w-100')
-  
+
   news_links={}
   for anchor_tag in anchor_tags:
       span_element = anchor_tag.find('span', class_='langspan')
@@ -242,15 +250,14 @@ def prNewsWire(category=''):
         final_url=root_url+str(anchor_tag.get('href'))
         news_links[final_url]=lang_value
 #   print(news_links)
-
   print(f'Number of pr news updates : {len(news_links)}')
-
   news_data=[]
   count=1
   for news_link in news_links:
-    if count==3:
-      break
-    # print(count, news_link)
+    # if count==11:
+    #   break
+    print(count)
+    # break
 
     response = requests.get(news_link)
     html_content = response.text
@@ -261,7 +268,7 @@ def prNewsWire(category=''):
     date_time=formate_date(date_time)
     date_object = datetime.strptime(date_time, "%Y-%m-%d %H:%M:%S")
     # print(date_time,'99999999',date_time,date_object,type(date_object))
-    
+
     figure_tag = soup.find("figure")
     # print(figure_tag)
     heading_class = soup.find(class_='row detail-headline')
@@ -281,8 +288,8 @@ def prNewsWire(category=''):
       result = search_images(headline_text)
       for img in result:
         img_url=img["link"]
-      
-    
+
+
     all_p_tags = soup.find_all(["i","p","strong"])
     content=''
     for p_tag in all_p_tags:
@@ -291,34 +298,32 @@ def prNewsWire(category=''):
     remove_words=['In-Language News','Searching for your content...','Share this article','Contact Us',' 888-776-0942','from 8 AM - 10 PM ET','\n\n\n\n','No results found. Please change your search terms and try again.']
     for word in remove_words:
       content=content.replace(word,'').strip()
-
-    # print(headline_text)
-    # print(img_url)
     # print(content)
-
-    title,points=summarize(headline_text,content)
+    try:
+      title,summary=summarize(headline_text,content)
+    except Exception as e:
+      print(e)
+      count+=1
+      continue
     # print(title)
-    # print(img_url)
-    # print(points)
     document = {
         'category':category,
         'datetime':date_object,
         'headline':headline_text,
         'title':title,
-        'img_url':img_url,
-        'points':points
-    }
-    # status=db.save_news(document)
-    # print(status)
+        'summary':summary
+        }
+    status=db.save_pr_news(document)
+    print(status)
     news_data.append(document)
     print('saved to db ---------------------------------------------')
-
 
     # title,summary_data=modelling.summarize(content)
     # print('------------------------------\n title: ',title,'\n',summary_data,'\n  -------------------------------------------------')
     # news_summaries[title]=summary_data
     count+=1
   return news_data
+
 # pr_news_data=prNewsWire('food')
 # print(pr_news_data)
 # email:str=Form(...)
@@ -342,6 +347,26 @@ async def getPrNews():
 async def hello():
     return {'success':'you have successfully deployed fastapi to vercel'}
 
+import threading
+import time
 
+def execute_prNewsWire_every_30secs():
+    while not stop_event.is_set():
+        pr_news_data=prNewsWire()
+        time.sleep(3600)
+def stop_execution():
+    stop_event.set()
+
+stop_event = threading.Event()
+pr_thread = threading.Thread(target=execute_prNewsWire_every_30secs)
+
+@app.get('/startScraper')
+def start_scraping():
+  pr_thread.start()
+@app.get('/stopScraper')
+def stop_scraping():
+  stop_execution()
+  pr_thread.join()
+  print("Execution stopped.")
 
 
