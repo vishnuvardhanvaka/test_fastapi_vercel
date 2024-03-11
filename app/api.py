@@ -349,25 +349,45 @@ async def hello():
 
 import threading
 import time
+from datetime import datetime
 
-def execute_prNewsWire_every_30secs():
-    while not stop_event.is_set():
-        pr_news_data=prNewsWire()
-        time.sleep(3600)
-def stop_execution():
-    stop_event.set()
+class PRNewsScraper:
+    def __init__(self):
+        self.interval = 3600  # 1 hour in seconds
+        self.is_running = False
+        self.thread = None
+        print('scraper initalized !')
 
-stop_event = threading.Event()
-pr_thread = threading.Thread(target=execute_prNewsWire_every_30secs)
+    def start(self):
+        if not self.is_running:
+            self.is_running = True
+            self.thread = threading.Thread(target=self.scrape_loop)
+            self.thread.start()
+            print("Scraping started.")
 
+    def stop(self):
+        if self.is_running:
+            self.is_running = False
+            self.thread.join()
+            print("Scraping stopped.")
+
+    def scrape_loop(self):
+        while self.is_running:
+            print(f"Scraping at {datetime.now()}...")
+            # Call your scraping function here
+            news_data = prNewsWire()
+            # Save or process the data as needed
+            print("Scraping complete.")
+            time.sleep(self.interval)
+
+scraper = PRNewsScraper()
 @app.get('/startScraper')
 def start_scraping():
-  pr_thread.start()
+  scraper.start()
   return {'success':True,'msg':'Scraping started'}
 @app.get('/stopScraper')
 def stop_scraping():
-  stop_execution()
-  pr_thread.join()
+  scraper.stop()
   print("Execution stopped.")
   return {'success':True,'msg':'Scraping stopped'}
 
