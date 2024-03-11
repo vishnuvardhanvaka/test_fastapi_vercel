@@ -363,10 +363,12 @@ pr_thread = threading.Thread(target=execute_prNewsWire_every_30secs)
 @app.get('/startScraper')
 def start_scraping():
   pr_thread.start()
+  return {'success':True,'msg':'Scraping started'}
 @app.get('/stopScraper')
 def stop_scraping():
   stop_execution()
   pr_thread.join()
   print("Execution stopped.")
+  return {'success':True,'msg':'Scraping stopped'}
 
 
